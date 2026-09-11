@@ -12,20 +12,47 @@ HEADERS = {
 }
 
 def fetch_spoon_data():
-    # 1. 프로필 및 팬 수 정보 수집
+    # 1. 프로필, 팬 수, 프로필 소개글 수집
     user_api_url = f"https://kr-api.spooncast.net/users/{USER_ID}/"
     user_res = requests.get(user_api_url, headers=HEADERS)
     
     if user_res.status_code != 200:
         raise Exception(f"사용자 정보 로드 실패: {user_res.status_code}")
     
-    user_data = user_res.json().get("results", [{}])[0]
+    user_json = user_res.json()
+    # API 응답 구조 예외 처리
+    if "results" in user_json and len(user_json["results"]) > 0:
+        user_data = user_json["results"][0]
+    else:
+        user_data = user_json
     
     nickname = user_data.get("nickname", "Rose")
     profile_img = user_data.get("profile_url", "")
-    fan_count = user_data.get("fan_count", 0)
     
-    # 2. 최근 방송 정보 및 방송 진행 여부 수집
+    # 팬 수 필드명 처리 (fancount 또는 fan_count)
+    fan_count = user_data.get("fancount", user_data.get("fan_count", 0))
+    
+    # 프로필 상단 자기소개글 추출
+    profile_bio = user_data.get("description", "")
+
+    # 2. 공지사항 탭 게시글 수집
+    notice_api_url = f"https://kr-api.spooncast.net/users/{USER_ID}/notice/"
+    notice_res = requests.get(notice_api_url, headers=HEADERS)
+    
+    notice_text = ""
+    if notice_res.status_code == 200:
+        notice_json = notice_res.json()
+        notice_list = notice_json.get("results", [])
+        if notice_list:
+            notice_text = notice_list[0].get("contents", "")
+            
+    # 공지사항 탭이 비어있을 경우 프로필 자기소개글로 대체
+    if not notice_text and profile_bio:
+        notice_text = profile_bio
+    elif not notice_text:
+        notice_text = "등록된 공지사항이 없습니다."
+
+    # 3. 최근 방송 정보 및 방송 진행 여부 수집
     live_api_url = f"https://kr-api.spooncast.net/users/{USER_ID}/live/"
     live_res = requests.get(live_api_url, headers=HEADERS)
     
@@ -33,13 +60,13 @@ def fetch_spoon_data():
     last_live_start = "방송 기록 없음"
     
     if live_res.status_code == 200:
-        live_data = live_res.json().get("results", [{}])[0]
-        if live_data:
-            # 방송 상태 판별
+        live_json = live_res.json()
+        results = live_json.get("results", [])
+        if results:
+            live_data = results[0]
             engine_status = live_data.get("engine", {}).get("host", "")
             is_live = (engine_status == "connected") or live_data.get("is_live", False)
             
-            # 최근 방송 시작 시간 파싱
             created_str = live_data.get("created", "")
             if created_str:
                 try:
@@ -48,17 +75,7 @@ def fetch_spoon_data():
                 except ValueError:
                     last_live_start = created_str
 
-    # 3. 최신 공지사항 수집
-    notice_api_url = f"https://kr-api.spooncast.net/users/{USER_ID}/notice/"
-    notice_res = requests.get(notice_api_url, headers=HEADERS)
-    
-    notice_text = "등록된 공지사항이 없습니다."
-    if notice_res.status_code == 200:
-        notice_list = notice_res.json().get("results", [])
-        if notice_list:
-            notice_text = notice_list[0].get("contents", "등록된 공지사항이 없습니다.")
-
-    # 추출된 데이터를 data.json 저장
+    # JSON 데이터 생성
     output_data = {
         "nickname": nickname,
         "profile_img": profile_img,
