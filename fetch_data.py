@@ -1,10 +1,11 @@
 import json
 import re
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from playwright.sync_api import sync_playwright
 
 USER_ID = "9592015"
 TARGET_URL = f"https://www.spooncast.net/kr/channel/{USER_ID}/tab/home"
+KST = timezone(timedelta(hours=9))
 
 def fetch_spoon_data():
     captured_data = {
@@ -14,7 +15,7 @@ def fetch_spoon_data():
         "is_live": False,
         "last_live_start": "방송 기록 없음",
         "notice": "등록된 공지사항이 없습니다.",
-        "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        "updated_at": datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S")
     }
 
     with sync_playwright() as p:
@@ -26,71 +27,108 @@ def fetch_spoon_data():
         )
         page = context.new_page()
 
-        # 1. API 응답 가로채기 (프로필 및 이미지용)
+        # 1. 백엔드 REST API 응답 가로채기 (가장 정확한 데이터 원천)
         def handle_response(response):
             url = response.url
             try:
+                # 유저 기본 프로필 API
                 if f"/users/{USER_ID}/" in url and response.status == 200:
-                    json_res = response.json()
-                    results = json_res.get("results", [])
-                    user_data = results[0] if results else json_res
+                    res_json = response.json()
+                    results = res_json.get("results", [])
+                    user_data = results[0] if results else res_json
                     
                     if user_data.get("nickname"):
                         captured_data["nickname"] = user_data.get("nickname")
                     if user_data.get("profile_url"):
                         captured_data["profile_img"] = user_data.get("profile_url")
-            except Exception:
-                pass
+                    
+                    # fancount 키 및 fan_count 키 모두 검증
+                    fc = user_data.get("fancount") or user_data.get("fan_count")
+                    if fc is not None:
+                        captured_data["fan_count"] = int(fc)
+                        
+                    if user_data.get("description"):
+                        captured_data["notice"] = user_data.get("description")
+
+                # 공지사항 탭 API
+                elif f"/users/{USER_ID}/notice/" in url and response.status == 200:
+                    res_json = response.json()
+                    notice_list = res_json.get("results", [])
+                    if notice_list and notice_list[0].get("contents"):
+                        captured_data["notice"] = notice_list[0].get("contents")
+
+                # 라이브 상태 API
+                elif f"/users/{USER_ID}/live/" in url and response.status == 200:
+                    res_json = response.json()
+                    results = res_json.get("results", [])
+                    if results:
+                        live_data = results[0]
+                        engine_status = live_data.get("engine", {}).get("host", "")
+                        captured_data["is_live"] = (engine_status == "connected") or live_data.get("is_live", False)
+                        
+                        created_str = live_data.get("created", "")
+                        if created_str:
+                            try:
+                                dt = datetime.fromisoformat(created_str.replace("Z", "+00:00"))
+                                captured_data["last_live_start"] = dt.astimezone(KST).strftime("%Y-%m-%d %H:%M")
+                            except ValueError:
+                                captured_data["last_live_start"] = created_str
+
+            except Exception as e:
+                print(f"[API Intercept Error] {e}")
 
         page.on("response", handle_response)
 
         try:
-            # 페이지 접속 및 완전한 로딩 대기
+            # DOM 및 네트워크 대기
             page.goto(TARGET_URL, wait_until="networkidle", timeout=60000)
-            page.wait_for_timeout(5000) # 5초간 화면 렌더링 유지
+            page.wait_for_timeout(6000)
 
-            # 2. DOM 화면 요소 직접 추출 (팬 수)
-            body_text = page.inner_text("body")
+            # 2. API 수신 실패 시 HTML DOM 요소 직접 파싱 (Fallback)
             
-            # "팬 103" 또는 "팬 1,024" 형태 패턴 정규식 탐색
-            fan_match = re.search(r"팬\s*([\d,]+)", body_text)
-            if fan_match:
-                fan_str = fan_match.group(1).replace(",", "")
-                captured_data["fan_count"] = int(fan_str)
+            # [이미지] 프로필 이미지태그 추출
+            if not captured_data["profile_img"]:
+                img_el = page.query_selector("img[src*='spooncast.net']")
+                if img_el:
+                    captured_data["profile_img"] = img_el.get_attribute("src")
 
-            # 3. DOM 화면 요소 직접 추출 (소개글 / 공지사항)
-            # 스푼 프로필 상단 또는 탭 내부 텍스트 추출 시도
-            try:
-                # 프로필 하단 소개글 영역 셀렉터 탐색
-                notice_element = page.query_selector("main") or page.query_selector("body")
-                if notice_element:
-                    all_text = notice_element.inner_text()
-                    lines = [line.strip() for line in all_text.split("\n") if line.strip()]
-                    
-                    # "팬 XXX" 다음 줄에 나오는 문장을 소개글/공지사항으로 인식
+            # [팬 수] "팬 103" 문구 파싱
+            if captured_data["fan_count"] == 0:
+                body_text = page.inner_text("body")
+                match = re.search(r"팬\s*([\d,]+)", body_text)
+                if match:
+                    captured_data["fan_count"] = int(match.group(1).replace(",", ""))
+
+            # [닉네임] H1 또는 상단 프로필 헤더 텍스트
+            if captured_data["nickname"] == "Rose":
+                header_el = page.query_selector("h1") or page.query_selector("h2")
+                if header_el:
+                    txt = header_el.inner_text().strip()
+                    if txt:
+                        captured_data["nickname"] = txt
+
+            # [공지사항/소개글] 소개글 텍스트 영역 탐색
+            if captured_data["notice"] in ["등록된 공지사항이 없습니다.", "103"]:
+                # 메인 본문 컨테이너 탐색
+                container = page.query_selector("main")
+                if container:
+                    lines = [line.strip() for line in container.inner_text().split("\n") if line.strip()]
                     for i, line in enumerate(lines):
                         if "팬" in line and i + 1 < len(lines):
-                            next_line = lines[i + 1]
-                            if next_line and not next_line.startswith("http") and len(next_line) > 1:
-                                captured_data["notice"] = next_line
+                            target_text = lines[i + 1]
+                            if not target_text.isdigit() and len(target_text) > 1:
+                                captured_data["notice"] = target_text
                                 break
-            except Exception as e:
-                print(f"DOM text parse error: {e}")
-
-            # 4. 라이브 상태 확인 (화면에 ON AIR 표시 여부)
-            if "LIVE" in body_text or "ON AIR" in body_text or "방송 중" in body_text:
-                captured_data["is_live"] = True
 
         except Exception as e:
-            print(f"Page execution error: {e}")
+            print(f"[Page Load Error] {e}")
 
         browser.close()
 
-    # 결과 데이터 저장
+    # 데이터 저장
     with open("data.json", "w", encoding="utf-8") as f:
         json.dump(captured_data, f, ensure_ascii=False, indent=4)
-        print("Updated data.json:", captured_data)
+        print("Updated Result:", captured_data)
 
 if __name__ == "__main__":
-
     fetch_spoon_data()
