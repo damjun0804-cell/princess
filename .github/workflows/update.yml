@@ -2,7 +2,8 @@ name: Update Spoon Radio Data
 
 on:
   schedule:
-    - cron: '0 * * * *'
+    # 15분마다 실행 (0분, 15분, 30분, 45분)
+    - cron: '*/30 * * * *'
   workflow_dispatch:
 
 permissions:
