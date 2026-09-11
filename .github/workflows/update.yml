@@ -5,15 +5,19 @@ on:
     - cron: '0 * * * *'
   workflow_dispatch:
 
+# 깃허브 액션에 쓰기 권한 부여
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - name: 저장소 체크아웃
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: 파이썬 환경 설정
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: '3.10'
 
