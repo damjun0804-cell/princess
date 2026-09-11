@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Princess Rose's Palace</title>
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@700&family=Gowun+Batang:wght@700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --pink-main: #ffb6c1;
+      --pink-soft: #fff0f5;
+      --gold: #d4af37;
+      --text-dark: #4a2e35;
+    }
+
+    body {
+      margin: 0;
+      padding: 0;
+      background-color: var(--pink-soft);
+      color: var(--text-dark);
+      font-family: 'Gowun Batang', serif;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      background-image: radial-gradient(#ffe4e1 20%, transparent 20%);
+      background-size: 20px 20px;
+    }
+
+    .card {
+      background: linear-gradient(135deg, #ffffff, var(--pink-soft));
+      border: 5px solid var(--gold);
+      border-radius: 25px;
+      box-shadow: 0 10px 30px rgba(212, 175, 55, 0.4), inset 0 0 15px rgba(255, 182, 193, 0.5);
+      width: 360px;
+      padding: 30px 20px;
+      text-align: center;
+      position: relative;
+    }
+
+    .card::before {
+      content: '👑';
+      font-size: 50px;
+      position: absolute;
+      top: -35px;
+      left: 50%;
+      transform: translateX(-50%);
+      filter: drop-shadow(0 4px 6px rgba(0,0,0,0.2));
+    }
+
+    .profile-img-container {
+      width: 140px;
+      height: 140px;
+      margin: 20px auto 10px;
+      border-radius: 50%;
+      border: 4px solid var(--gold);
+      padding: 5px;
+      background-color: #fff;
+      box-shadow: 0 0 15px var(--pink-main);
+      position: relative;
+    }
+
+    .profile-img {
+      width: 100%;
+      height: 100%;
+      border-radius: 50%;
+      object-fit: cover;
+    }
+
+    .status-badge {
+      display: inline-block;
+      padding: 5px 15px;
+      border-radius: 20px;
+      font-size: 13px;
+      font-weight: bold;
+      margin-bottom: 15px;
+    }
+
+    .status-badge.off {
+      background-color: #e0e0e0;
+      color: #666;
+    }
+
+    .status-badge.on {
+      background-color: #ff4081;
+      color: #fff;
+      box-shadow: 0 0 10px #ff4081;
+      animation: pulse 1.5s infinite;
+    }
+
+    @keyframes pulse {
+      0% { transform: scale(1); }
+      50% { transform: scale(1.05); }
+      100% { transform: scale(1); }
+    }
+
+    h1 {
+      font-family: 'Cinzel', serif;
+      color: #b8860b;
+      font-size: 24px;
+      margin: 5px 0;
+      text-shadow: 1px 1px 2px #fff;
+    }
+
+    .subtitle {
+      font-size: 14px;
+      color: #c71585;
+      margin-bottom: 20px;
+    }
+
+    .info-box {
+      background: #ffffff;
+      border: 2px dashed var(--gold);
+      border-radius: 15px;
+      padding: 15px;
+      margin-bottom: 12px;
+    }
+
+    .info-title {
+      font-size: 13px;
+      color: #b8860b;
+      margin-bottom: 4px;
+      font-weight: bold;
+    }
+
+    .info-content {
+      font-size: 15px;
+      font-weight: bold;
+      color: #d87093;
+    }
+
+    .notice-content {
+      font-size: 13px;
+      color: #555;
+      font-weight: normal;
+      white-space: pre-wrap;
+      text-align: left;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="card">
+    <div class="profile-img-container">
+      <img id="profile-img" class="profile-img" src="" alt="Profile">
+    </div>
+    <h1 id="nickname">Princess Rose</h1>
+    <div class="subtitle">✨ 도도한 공주님의 공식 궁전 ✨</div>
+
+    <div id="status-badge" class="status-badge off">방송 확인 중...</div>
+
+    <div class="info-box">
+      <div class="info-title">💖 왕국 백성 (팬 수)</div>
+      <div class="info-content"><span id="fan-count">0</span>명</div>
+    </div>
+
+    <div class="info-box">
+      <div class="info-title">⏰ 최근 방송 시작 시간</div>
+      <div class="info-content" id="last-live">기록 없음</div>
+    </div>
+
+    <div class="info-box">
+      <div class="info-title">📜 공주님의 칙령 (공지사항)</div>
+      <div id="notice" class="notice-content">로딩 중...</div>
+    </div>
+  </div>
+
+  <script>
+    async function loadData() {
+      try {
+        const response = await fetch('data.json?t=' + new Date().getTime());
+        const data = await response.json();
+        
+        document.getElementById('nickname').innerText = data.nickname;
+        document.getElementById('profile-img').src = data.profile_img;
+        document.getElementById('fan-count').innerText = Number(data.fan_count).toLocaleString();
+        document.getElementById('last-live').innerText = data.last_live_start;
+        document.getElementById('notice').innerText = data.notice;
+
+        const badge = document.getElementById('status-badge');
+        if (data.is_live) {
+          badge.className = "status-badge on";
+          badge.innerText = "👑 공주님 방송 중 (ON AIR) 👑";
+        } else {
+          badge.className = "status-badge off";
+          badge.innerText = "💤 공주님 휴식 중 (OFFLINE)";
+        }
+      } catch (error) {
+        console.error("데이터 로드 실패:", error);
+      }
+    }
+
+    loadData();
+  </script>
+</body>
+</html>
