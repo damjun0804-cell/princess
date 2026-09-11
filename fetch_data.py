@@ -27,11 +27,11 @@ def fetch_spoon_data():
         )
         page = context.new_page()
 
-        # 1. API 응답 가로채기
+        # 1. API 가로채기
         def handle_response(response):
             url = response.url
             try:
-                # 유저 프로필 API (닉네임, 사진, 팬 수, 자기소개)
+                # 유저 프로필 API
                 if f"/users/{USER_ID}/" in url and response.status == 200:
                     res_json = response.json()
                     results = res_json.get("results", [])
@@ -50,7 +50,7 @@ def fetch_spoon_data():
                     if desc:
                         captured_data["description"] = desc
 
-                # 공지사항 API (Notice)
+                # 공지사항 API
                 elif f"/users/{USER_ID}/notice/" in url and response.status == 200:
                     res_json = response.json()
                     notice_list = res_json.get("results", [])
@@ -106,6 +106,12 @@ def fetch_spoon_data():
             print(f"[Page Load Error] {e}")
 
         browser.close()
+
+    # 3. '팬 랭킹' 문구만 선별 필터링
+    notice_val = captured_data["notice"].strip()
+    # 공백 제거 후 비교하여 "팬 랭킹", "팬랭킹" 형태만 정확히 걸러냄
+    if notice_val.replace(" ", "") == "팬랭킹":
+        captured_data["notice"] = "등록된 공지사항이 없습니다."
 
     with open("data.json", "w", encoding="utf-8") as f:
         json.dump(captured_data, f, ensure_ascii=False, indent=4)
